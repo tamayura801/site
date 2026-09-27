@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tamayura Try-on</title>
+<meta name="description" content="ジャグアタトゥーのバーチャル試着。写真の上でデザイン・位置・サイズをチェックできます。">
+<meta name="theme-color" content="#f2f3f7">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,400;1,9..144,600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ヘッダー -->
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Tamayura Try-on">
+      <span class="brand-word">Tamayura</span>
+      <span class="brand-sub">Virtual Try-on</span>
+    </a>
+    <div class="topbar-actions">
+      <button class="btn-ghost" id="changePhotoBtn" type="button" hidden>写真を変更</button>
+      <button class="btn-primary btn-sm" id="finishBtn" type="button" disabled>完成</button>
+    </div>
+  </header>
+
+  <!-- 試着エリア -->
+  <main class="stage" id="stage">
+    <canvas id="stageCanvas" aria-label="試着プレビュー"></canvas>
+
+    <!-- 写真がまだないとき -->
+    <div class="empty" id="emptyState">
+      <div class="empty-inner">
+        <p class="empty-kicker">STEP 1</p>
+        <h1 class="empty-title">ジャグアを入れたい場所を<br>撮ってみよう</h1>
+        <p class="empty-lead">腕・手首・脚・足首・肩・背中など。<br>明るい場所で、肌が大きく写った写真がおすすめです。</p>
+        <div class="upload-buttons">
+          <button class="btn-primary btn-lg only-touch" id="cameraBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            写真を撮る
+          </button>
+          <button class="btn-secondary btn-lg" id="libraryBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 4"/></svg>
+            <span class="only-touch-inline">ライブラリから選ぶ</span><span class="only-pointer-inline">画像を選ぶ</span>
+          </button>
+        </div>
+        <p class="drop-note only-pointer">ここに画像をドラッグ＆ドロップしてもOK</p>
+        <button class="btn-link" id="sampleBtn" type="button">サンプル画像で試してみる</button>
+        <p class="privacy">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+          写真はお使いの端末のブラウザ内だけで処理され、サーバーへの送信・保存は行いません。
+        </p>
+      </div>
+    </div>
+
+    <!-- 試着エリア上のツール -->
+    <div class="stage-tools" id="stageTools" hidden>
+      <button class="ba-toggle" id="baToggle" type="button" aria-pressed="false">
+        <span class="ba-before">Before</span><span class="ba-after">After</span>
+      </button>
+      <div class="layer-actions" id="layerActions">
+        <button class="icon-btn" type="button" id="resetBtn" aria-label="位置と大きさをリセット" title="リセット">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>
+        </button>
+        <button class="icon-btn" type="button" id="deleteBtn" aria-label="デザインを削除" title="削除">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="stage-hint" id="stageHint" hidden>
+      <span class="only-touch-inline">1本指で移動・2本指で拡大と回転</span>
+      <span class="only-pointer-inline">ドラッグで移動・角のハンドルで拡大と回転</span>
+    </div>
+    <div class="drop-overlay" id="dropOverlay" hidden>ここにドロップ</div>
+  </main>
+
+  <!-- 操作パネル -->
+  <section class="panel" id="panel" aria-label="操作パネル">
+    <div class="panel-body">
+
+      <!-- デザイン -->
+      <div class="pane" id="pane-design" data-pane="design">
+        <div class="chips scroll-x" id="categoryTabs" role="tablist" aria-label="カテゴリー"></div>
+        <div class="design-list scroll-x" id="designList"></div>
+      </div>
+
+      <!-- サイズ -->
+      <div class="pane" id="pane-size" data-pane="size" hidden>
+        <div class="row-between">
+          <span class="label">サイズイメージ
+            <label class="part-select">部位
+              <select id="bodyPartSelect" aria-label="撮った部位"></select>
+            </label>
+          </span>
+          <span class="value" id="sizeValue">—</span>
+        </div>
+        <input type="range" id="sizeRange" min="1" max="20" step="0.5" value="5" aria-label="サイズ">
+        <div class="row-between size-meta">
+          <span class="size-compare" id="sizeCompare"></span>
+          <span class="size-price" id="sizePrice"></span>
+        </div>
+        <div class="chips scroll-x" id="sizePresets"></div>
+        <p class="note">cm・料金は目安です。サイズは面積で区分するため、細長いデザインは長めになります。</p>
+      </div>
+
+      <!-- 角度 -->
+      <div class="pane" id="pane-rotate" data-pane="rotate" hidden>
+        <div class="row-between">
+          <span class="label">角度</span>
+          <span class="value" id="rotateValue">0°</span>
+        </div>
+        <input type="range" id="rotateRange" min="-180" max="180" step="1" value="0" aria-label="角度">
+        <div class="chips">
+          <button class="chip" type="button" data-rotate="-15">−15°</button>
+          <button class="chip" type="button" data-rotate="0">0°に戻す</button>
+          <button class="chip" type="button" data-rotate="15">＋15°</button>
+          <button class="chip" type="button" id="flipBtn">左右反転</button>
+        </div>
+      </div>
+
+      <!-- なじみ -->
+      <div class="pane" id="pane-blend" data-pane="blend" hidden>
+        <div class="segmented" role="radiogroup" aria-label="表示">
+          <button type="button" role="radio" data-mode="jagua" aria-checked="true">ジャグア風</button>
+          <button type="button" role="radio" data-mode="original" aria-checked="false">デザインの色のまま</button>
+        </div>
+        <div class="ink-list" id="inkList"></div>
+        <p class="note" id="inkNote"></p>
+        <div class="row-between">
+          <span class="label">濃さ</span>
+          <span class="value" id="opacityValue">85%</span>
+        </div>
+        <input type="range" id="opacityRange" min="30" max="100" step="1" value="85" aria-label="濃さ">
+      </div>
+
+    </div>
+
+    <nav class="tabbar" role="tablist" aria-label="操作メニュー">
+      <button class="tab is-active" type="button" data-tab="design" role="tab" aria-selected="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20c-4-3-7-6-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 4-3 7-7 10z"/></svg>デザイン
+      </button>
+      <button class="tab" type="button" data-tab="size" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20L20 4M14 4h6v6M10 20H4v-6"/></svg>サイズ
+      </button>
+      <button class="tab" type="button" data-tab="rotate" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/></svg>角度
+      </button>
+      <button class="tab" type="button" data-tab="blend" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c3 4 6 7.2 6 10.5a6 6 0 0 1-12 0c0-3.3 3-6.5 6-10.5z"/></svg>なじみ
+      </button>
+    </nav>
+  </section>
+</div>
+
+<!-- 完成画面 -->
+<div class="result" id="result" hidden role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+  <div class="result-inner">
+    <div class="result-head">
+      <button class="btn-ghost" type="button" id="backToEdit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>編集に戻る
+      </button>
+    </div>
+    <h2 class="result-title" id="resultTitle">完成！</h2>
+    <figure class="result-figure">
+      <img id="resultImage" alt="試着イメージ">
+      <button class="ba-toggle on-image" id="resultBaToggle" type="button" aria-pressed="false">
+        <span class="ba-before">Before</span><span class="ba-after">After</span>
+      </button>
+    </figure>
+    <dl class="result-summary" id="resultSummary"></dl>
+    <div class="result-actions">
+      <button class="btn-secondary" type="button" id="saveBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>画像を保存
+      </button>
+      <button class="btn-secondary" type="button" id="shareBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.2 10.8l7.6-4M8.2 13.2l7.6 4"/></svg>シェア
+      </button>
+    </div>
+    <p class="note center">うまく保存できないときは、画像を長押しして保存してください。</p>
+    <a class="btn-primary btn-lg btn-block cta" id="bookingBtn" href="#" target="_blank" rel="noopener">このイメージで相談・予約する</a>
+    <p class="note center">予約の際に、保存した画像と下のメモを送ってもらえるとスムーズです。</p>
+    <button class="btn-link" type="button" id="copySummaryBtn">デザイン名・サイズをコピー</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- ファイル選択（非表示）。capture 付きはカメラ起動用 -->
+<input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+<input type="file" id="libraryInput" accept="image/*" hidden>
+
+<script src="js/config.js"></script>
+<script src="js/designs.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
