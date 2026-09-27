@@ -148,24 +148,45 @@
     if (!state.photo) return 1;
     return Math.min(state.photo.width, state.photo.height) / bodyPart().frameCm;
   }
-  // サイズは「面積」で区分：デザインの縦×横と同じ面積の正方形の一辺を cm とする
-  // （丸や正方形のデザインは見た目どおり、細長いデザインは長くなる）
-  function areaFactor(layer) {
+  // layer.size ＝ デザインの長い辺（写真上の px）
+  function aspect(layer) { // 長い辺 ÷ 短い辺（1以上）
     const a = layer.img.naturalWidth / layer.img.naturalHeight || 1;
-    return Math.sqrt(Math.max(a, 1 / a));
+    return Math.max(a, 1 / a);
   }
-  function layerCm(layer) { return layer.size / areaFactor(layer) / pxPerCm(); }
-  function setLayerCm(layer, cm) { layer.size = clampSize(cm * pxPerCm() * areaFactor(layer)); }
+  function layerLongCm(layer) { return layer.size / pxPerCm(); }
+  function setLayerLongCm(layer, cm) { layer.size = clampSize(cm * pxPerCm()); }
+  // デザインの縦・横（cm）
+  function layerDimsCm(layer) {
+    const { w, h } = layerBox(layer);
+    const k = pxPerCm();
+    return { w: w / k, h: h / k, short: Math.min(w, h) / k, long: Math.max(w, h) / k };
+  }
 
-  // その cm がどの料金区分に入るか（区分の上限を超えないいちばん小さい区分）
-  function sizeTier(cm) {
-    const tiers = CONFIG.SIZE_TIERS;
-    return tiers.find((t) => cm <= t.cm + 0.25) || null;
+  // サイズ区分：デザインの「短い辺×長い辺」がどれかの型に収まる、いちばん小さい区分
+  function tierOf(layer) {
+    const d = layerDimsCm(layer);
+    const tol = 1.03; // 3% までは誤差として同じ区分に
+    return CONFIG.SIZE_TIERS.find((t) =>
+      t.shapes.some(([s, l]) => d.short <= (s / 10) * tol && d.long <= (l / 10) * tol)) || null;
   }
+  // その区分の型に収まる、いちばん大きいサイズにする
+  function setLayerTier(layer, tier) {
+    const a = aspect(layer);
+    const best = Math.max(...tier.shapes.map(([s, l]) => Math.min(l, s * a) / 10));
+    setLayerLongCm(layer, best);
+  }
+  const findTier = (cm) => CONFIG.SIZE_TIERS.find((t) => t.cm === cm);
+
   const yen = (n) => '¥' + n.toLocaleString('ja-JP');
   function tierPriceText(t) {
     if (!t) return CONFIG.OVER_SIZE_TEXT;
-    return t.price ? yen(t.price) : (t.note || '要相談');
+    if (!t.price) return t.note || '要相談';
+    return yen(t.price) + (t.note ? '（' + t.note + '）' : '');
+  }
+  const half = (v) => Math.round(v * 2) / 2;
+  function dimsText(layer) {
+    const d = layerDimsCm(layer);
+    return '約' + half(d.w) + '×' + half(d.h) + 'cm';
   }
   function clampSize(size) {
     if (!state.photo) return size;
@@ -185,7 +206,7 @@
   function newLayer(design, img) {
     const p = state.photo;
     const layer = { design, img, x: p.width / 2, y: p.height / 2, size: 0, rot: 0, flip: false };
-    setLayerCm(layer, 5); // 最初は 5cm で置く
+    setLayerTier(layer, findTier(5) || CONFIG.SIZE_TIERS[0]); // 最初は 5cm 区分で置く
     // 写真からはみ出すほど大きい場合は小さくする
     const maxSize = Math.min(p.width, p.height) * 0.7;
     if (layer.size > maxSize) layer.size = maxSize;
@@ -214,15 +235,15 @@
     const current = state.layers[state.selected];
     if (current && state.layers.length >= CONFIG.MAX_LAYERS) {
       // 置いてあるデザインを差し替え（位置・サイズ区分・角度はそのまま）
-      const cm = layerCm(current);
+      const tier = tierOf(current), cm = layerLongCm(current);
       current.design = design;
       current.img = img;
-      setLayerCm(current, cm);
+      if (tier) setLayerTier(current, tier); else setLayerLongCm(current, cm);
     } else if (state.layers.length >= CONFIG.MAX_LAYERS) {
       const l = state.layers[state.layers.length - 1];
-      const cm = layerCm(l);
+      const tier = tierOf(l), cm = layerLongCm(l);
       l.design = design; l.img = img;
-      setLayerCm(l, cm);
+      if (tier) setLayerTier(l, tier); else setLayerLongCm(l, cm);
       state.selected = state.layers.length - 1;
     } else {
       state.layers.push(newLayer(design, img));
@@ -591,7 +612,7 @@
       b.textContent = cm + 'cm';
       b.addEventListener('click', () => {
         const l = selectedLayer(); if (!l) return;
-        setLayerCm(l, cm); syncControls(); requestDraw();
+        setLayerTier(l, t); syncControls(); requestDraw();
       });
       presets.appendChild(b);
     });
@@ -604,15 +625,15 @@
     });
     sel.addEventListener('change', () => {
       const l = selectedLayer();
-      const cm = l ? layerCm(l) : null;
+      const cm = l ? layerLongCm(l) : null;
       state.bodyPart = sel.value;
-      if (l) setLayerCm(l, cm); // 同じ cm のまま、部位に合わせて大きさを取り直す
+      if (l) setLayerLongCm(l, cm); // 同じ cm のまま、部位に合わせて大きさを取り直す
       syncControls(); requestDraw();
     });
 
     $('sizeRange').addEventListener('input', (e) => {
       const l = selectedLayer(); if (!l) return;
-      setLayerCm(l, parseFloat(e.target.value)); syncControls(); requestDraw();
+      setLayerLongCm(l, parseFloat(e.target.value)); syncControls(); requestDraw();
     });
   }
 
@@ -667,14 +688,13 @@
   function syncControls() {
     const l = selectedLayer();
     const has = !!l;
-    const cm = has ? layerCm(l) : null;
-    const tier = has ? sizeTier(cm) : null;
-    $('sizeValue').textContent = has ? '約' + (Math.round(cm * 2) / 2) + 'cm' : '—';
+    const tier = has ? tierOf(l) : null;
+    $('sizeValue').textContent = has ? dimsText(l) : '—';
     $('sizePrice').textContent = has ? (tier ? tier.cm + 'cm区分 ' + tierPriceText(tier) : CONFIG.OVER_SIZE_TEXT) : '';
-    $('sizeCompare').textContent = has && tier ? tier.cm + 'cm は ' + tier.compare : '';
-    if (has) $('sizeRange').value = Math.max(1, Math.min(20, cm));
+    $('sizeCompare').textContent = has && tier && tier.compare ? '≒ ' + tier.compare : '';
+    if (has) $('sizeRange').value = Math.max(1, Math.min(25, layerLongCm(l)));
     document.querySelectorAll('#sizePresets .chip').forEach((b) => {
-      b.setAttribute('aria-pressed', String(has && Math.abs(cm - b.dataset.cm) < 0.25));
+      b.setAttribute('aria-pressed', String(!!tier && tier.cm === parseFloat(b.dataset.cm)));
     });
     $('bodyPartSelect').value = state.bodyPart;
 
@@ -818,12 +838,11 @@
     $('resultBaToggle').setAttribute('aria-pressed', 'false');
 
     const l = state.layers[0];
-    const cm = layerCm(l);
-    const tier = sizeTier(cm);
+    const tier = tierOf(l);
     const rows = [
       ['デザイン', state.layers.map((x) => x.design.name).join(' / ')],
       ['部位', bodyPart().label],
-      ['サイズ目安', tier ? tier.cm + 'cm区分（約' + (Math.round(cm * 2) / 2) + 'cm）' : '約' + Math.round(cm) + 'cm'],
+      ['サイズ目安', tier ? tier.cm + 'cm区分（' + dimsText(l) + '）' : dimsText(l)],
       ['料金目安', tierPriceText(tier)],
     ];
     const dl = $('resultSummary');

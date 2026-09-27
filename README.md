@@ -21,7 +21,7 @@
 | やりたいこと | 触るファイル |
 |---|---|
 | 予約ボタンのリンク先を設定 | `js/config.js` の `BOOKING_URL` |
-| 料金・サイズ区分・比較の文言 | `js/config.js` の `SIZE_TIERS` |
+| 料金・サイズ区分（型の寸法）・比較の文言 | `js/config.js` の `SIZE_TIERS` |
 | 保存画像の文字（透かし） | `js/config.js` の `WATERMARK` |
 | デザインを追加・削除 | `designs/` に画像を入れて `js/designs.js` に1行追加 |
 | 色を変える | `css/style.css` の先頭 `:root` |
